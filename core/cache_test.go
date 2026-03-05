@@ -27,8 +27,8 @@ func TestNewCache(t *testing.T) {
 	require.NotNil(t, m)
 	require.Equal(t, "value1", m["field1"])
 
-	time.Sleep(1 * time.Second)
-
-	m = cache.Redis().HGetAll(ctx, "test_key").Val()
-	require.Empty(t, m)
+	require.Eventually(t, func() bool {
+		m = cache.Redis().HGetAll(ctx, "test_key").Val()
+		return len(m) == 0
+	}, 3*time.Second, 100*time.Millisecond)
 }

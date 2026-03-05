@@ -32,25 +32,11 @@ func ParseHourMinute(timeStr string) (hour, minute int, err error) {
 // TimeStringToMinutes 将时间字符串转换为分钟数
 // timeStr 格式为 "HH:MM"，如 "6:30" 表示 390 分钟
 func TimeStringToMinutes(timeStr string) (int, error) {
-	parts := len(timeStr)
-	// 简单的验证
-	if parts < 4 {
-		return 0, errors.New("invalid time format")
-	}
-
-	// 手动解析时间字符串
-	var hours, minutes int
-	_, err := time.Parse("15:04", timeStr)
+	t, err := time.Parse("15:04", timeStr)
 	if err != nil {
 		return 0, err
 	}
-
-	// 重新解析得到小时和分钟
-	t, _ := time.Parse("15:04", timeStr)
-	hours = t.Hour()
-	minutes = t.Minute()
-
-	return hours*60 + minutes, nil
+	return t.Hour()*60 + t.Minute(), nil
 }
 
 // ParseTimeRange 解析时间范围字符串

@@ -241,7 +241,7 @@ func (p *Punch) doEvent(ctx context.Context, cfg *core.Config, cache *core.Cache
 	}
 
 	now := time.Now()
-	// 在线事件触发上班打卡，离线事件触发下班打卡。
+	// 在线事件触发上班打卡，离线事件触发下班打卡
 	switch event.Type {
 	case openwrt.EventOnline:
 		p.tryCheckIn(ctx, cache, fs, event, user, now)
@@ -266,35 +266,45 @@ func (p *Punch) matchUser(users []*core.User, mac string) *core.User {
 
 func (p *Punch) tryCheckIn(ctx context.Context, cache *core.Cache, fs *feishu.Feishu, event openwrt.DeviceEvent, user *core.User, now time.Time) {
 	latestCheckInTime := p.dayAtHourMinute(now, user.CheckIn.LatestTime.Hour, user.CheckIn.LatestTime.Minute)
-	// 仅当设备上线时间不晚于配置的 latest，才进入上班打卡后续判定。
+	// 仅当设备上线时间不晚于配置的 latest，才进入上班打卡后续判定
 	if now.After(latestCheckInTime) {
 		return
 	}
 
 	key := p.punchCacheKey("checkin", user.Id, now)
-	// Redis key 用于“用户+日期+打卡类型”幂等，避免同一天重复触发。
-	exists, err := cache.Exists(ctx, key)
+	// Redis key 用于“用户+日期+打卡类型”幂等，避免同一天重复触发
+	acquired, err := cache.SetIfAbsent(ctx, key, "pending", 24*time.Hour)
 	if err != nil {
-		zap.S().Errorf("读取上班打卡缓存失败，key: %s, error: %v", key, err)
+		zap.S().Errorf("抢占上班打卡幂等键失败，key: %s, error: %v", key, err)
 		return
 	}
-	if exists {
+	if !acquired {
 		return
 	}
+	committed := false
+	defer func() {
+		if committed {
+			return
+		}
+		if delErr := cache.Del(ctx, key); delErr != nil {
+			zap.S().Errorf("回滚上班打卡幂等键失败，key: %s, error: %v", key, delErr)
+		}
+	}()
 
 	var data *larkattendance.QueryUserFlowRespData
-	// 上班打卡去重：仅看当日 00:00:00 到 09:00:00 是否已有记录。
+	// 上班打卡去重：仅看当日 00:00:00 到 09:00:00 是否已有记录
 	data, err = fs.UserFlowsQuery(user.Id, p.dayStart(now), p.dayAtHour(now, 9))
 	if err != nil {
 		zap.S().Errorf("查询上班打卡记录失败，user: %s, error: %v", user.Id, err)
 		return
 	}
 
-	// 上班打卡时间 = 设备上线时间向前随机 [from, to] 分钟。
+	// 上班打卡时间 = 设备上线时间向前随机 [from, to] 分钟
 	checkTime := p.randomCheckInTime(user, now)
 
-	// 已有上班记录则仅写入幂等标记，后续事件直接跳过。
+	// 已有上班记录则仅写入幂等标记，后续事件直接跳过
 	if p.hasCheckInRecord(data) {
+		committed = true
 		err = cache.Set(ctx, key, checkTime.Format(time.DateTime), 24*time.Hour)
 		if err != nil {
 			zap.S().Errorf("写入上班打卡缓存失败，key: %s, error: %v", key, err)
@@ -310,6 +320,7 @@ func (p *Punch) tryCheckIn(ctx context.Context, cache *core.Cache, fs *feishu.Fe
 		return
 	}
 
+	committed = true
 	err = cache.Set(ctx, key, strconv.FormatInt(checkTime.Unix(), 10), 24*time.Hour)
 	if err != nil {
 		zap.S().Errorf("写入上班打卡缓存失败，key: %s, error: %v", key, err)
@@ -319,35 +330,45 @@ func (p *Punch) tryCheckIn(ctx context.Context, cache *core.Cache, fs *feishu.Fe
 
 func (p *Punch) tryCheckOut(ctx context.Context, cache *core.Cache, fs *feishu.Feishu, event openwrt.DeviceEvent, user *core.User, now time.Time) {
 	earliestCheckOutTime := p.dayAtHourMinute(now, user.CheckOut.EarliestTime.Hour, user.CheckOut.EarliestTime.Minute)
-	// 仅当设备离线时间不早于配置的 earliest，才进入下班打卡后续判定。
+	// 仅当设备离线时间不早于配置的 earliest，才进入下班打卡后续判定
 	if now.Before(earliestCheckOutTime) {
 		return
 	}
 
 	key := p.punchCacheKey("checkout", user.Id, now)
-	// Redis key 用于“用户+日期+打卡类型”幂等，避免同一天重复触发。
-	exists, err := cache.Exists(ctx, key)
+	// Redis key 用于“用户+日期+打卡类型”幂等，避免同一天重复触发
+	acquired, err := cache.SetIfAbsent(ctx, key, "pending", 24*time.Hour)
 	if err != nil {
-		zap.S().Errorf("读取下班打卡缓存失败，key: %s, error: %v", key, err)
+		zap.S().Errorf("抢占下班打卡幂等键失败，key: %s, error: %v", key, err)
 		return
 	}
-	if exists {
+	if !acquired {
 		return
 	}
+	committed := false
+	defer func() {
+		if committed {
+			return
+		}
+		if delErr := cache.Del(ctx, key); delErr != nil {
+			zap.S().Errorf("回滚下班打卡幂等键失败，key: %s, error: %v", key, delErr)
+		}
+	}()
 
 	var data *larkattendance.QueryUserFlowRespData
-	// 下班打卡去重：仅看当日 18:00:00 到 24:00:00 是否已有记录。
+	// 下班打卡去重：仅看当日 18:00:00 到 24:00:00 是否已有记录
 	data, err = fs.UserFlowsQuery(user.Id, p.dayAtHour(now, 18), p.dayEnd(now))
 	if err != nil {
 		zap.S().Errorf("查询下班打卡记录失败，user: %s, error: %v", user.Id, err)
 		return
 	}
 
-	// 下班打卡时间 = 设备离线时间向后随机 [from, to] 分钟。
+	// 下班打卡时间 = 设备离线时间向后随机 [from, to] 分钟
 	checkTime := p.randomCheckOutTime(user, now)
 
-	// 已有下班记录则仅写入幂等标记，后续事件直接跳过。
+	// 已有下班记录则仅写入幂等标记，后续事件直接跳过
 	if p.hasCheckOutRecord(data) {
+		committed = true
 		err = cache.Set(ctx, key, checkTime.Format(time.DateTime), 24*time.Hour)
 		if err != nil {
 			zap.S().Errorf("写入下班打卡缓存失败，key: %s, error: %v", key, err)
@@ -363,6 +384,7 @@ func (p *Punch) tryCheckOut(ctx context.Context, cache *core.Cache, fs *feishu.F
 		return
 	}
 
+	committed = true
 	err = cache.Set(ctx, key, strconv.FormatInt(checkTime.Unix(), 10), 24*time.Hour)
 	if err != nil {
 		zap.S().Errorf("写入下班打卡缓存失败，key: %s, error: %v", key, err)
@@ -440,6 +462,5 @@ func randomInRange(firstOffset, secondOffset int) int {
 	if lowerOffset == upperOffset {
 		return lowerOffset
 	}
-	r := rand.New(rand.NewSource(time.Now().UnixNano()))
-	return lowerOffset + r.Intn(upperOffset-lowerOffset+1)
+	return lowerOffset + rand.Intn(upperOffset-lowerOffset+1)
 }

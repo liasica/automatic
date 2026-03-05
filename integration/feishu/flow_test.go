@@ -6,7 +6,6 @@ package feishu
 
 import (
 	"fmt"
-	"os"
 	"slices"
 	"strconv"
 	"testing"
@@ -31,21 +30,19 @@ func getConfig(t *testing.T) (*core.Config, *core.Cache) {
 	return cfg, cache
 }
 
-var dateStr = ""
+func shanghaiLocation(t *testing.T) *time.Location {
+	t.Helper()
+	loc, err := time.LoadLocation("Asia/Shanghai")
+	require.NoError(t, err)
+	return loc
+}
 
-func TestUserFlowsCreate(t *testing.T) { // 设置全局时区
-	tz := "Asia/Shanghai"
-	_ = os.Setenv("TZ", tz)
-	loc, _ := time.LoadLocation(tz)
-	time.Local = loc
-
+func TestUserFlowsCreate(t *testing.T) {
+	loc := shanghaiLocation(t)
 	l, _ := zap.NewDevelopment()
 	zap.ReplaceGlobals(l)
 
-	if dateStr == "" {
-		dateStr = time.Now().Format("20060102")
-	}
-
+	dateStr := time.Now().In(loc).Format("20060102")
 	t1, t2, err := util.GenerateFlowTimes(dateStr, "5:30-5:45", "19:59-20:35")
 	require.NoError(t, err)
 	t.Log(t1, t2)
@@ -59,16 +56,12 @@ func TestUserFlowsCreate(t *testing.T) { // 设置全局时区
 }
 
 func TestUserFlowsQuery(t *testing.T) {
-	tz := "Asia/Shanghai"
-	_ = os.Setenv("TZ", tz)
-	loc, _ := time.LoadLocation(tz)
-	time.Local = loc
-
+	loc := shanghaiLocation(t)
 	l, _ := zap.NewDevelopment()
 	zap.ReplaceGlobals(l)
 
 	lar := New(getConfig(t))
-	resp, err := lar.UserFlowsQuery("liasica", time.Date(2026, 2, 27, 0, 0, 0, 0, time.Local), time.Date(2026, 2, 28, 0, 0, 0, 0, time.Local))
+	resp, err := lar.UserFlowsQuery("liasica", time.Date(2026, 2, 27, 0, 0, 0, 0, loc), time.Date(2026, 2, 28, 0, 0, 0, 0, loc))
 	require.NoError(t, err)
 	t.Logf("Flows: %d", len(resp.UserFlowResults))
 	for _, result := range resp.UserFlowResults {
@@ -77,16 +70,12 @@ func TestUserFlowsQuery(t *testing.T) {
 }
 
 func TestUserFlowsDelete(t *testing.T) {
-	tz := "Asia/Shanghai"
-	_ = os.Setenv("TZ", tz)
-	loc, _ := time.LoadLocation(tz)
-	time.Local = loc
-
+	loc := shanghaiLocation(t)
 	l, _ := zap.NewDevelopment()
 	zap.ReplaceGlobals(l)
 
 	lar := New(getConfig(t))
-	flows, err := lar.UserFlowsQuery("liasica", time.Date(2026, 2, 1, 0, 0, 0, 0, time.Local), time.Date(2026, 2, 25, 23, 59, 0, 0, time.Local))
+	flows, err := lar.UserFlowsQuery("liasica", time.Date(2026, 2, 1, 0, 0, 0, 0, loc), time.Date(2026, 2, 25, 23, 59, 0, 0, loc))
 	require.NoError(t, err)
 	t.Logf("Flows: %d", len(flows.UserFlowResults))
 

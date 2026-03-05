@@ -6,6 +6,7 @@ package core
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	"github.com/redis/go-redis/v9"
@@ -39,7 +40,21 @@ func (c *Cache) Set(ctx context.Context, key string, value string, expireTime ti
 }
 
 func (c *Cache) Get(ctx context.Context, key string) (string, error) {
-	return c.client.Get(ctx, key).Val(), nil
+	return c.client.Get(ctx, key).Result()
+}
+
+func (c *Cache) SetIfAbsent(ctx context.Context, key string, value string, expireTime time.Duration) (bool, error) {
+	cmd := c.client.SetArgs(ctx, key, value, redis.SetArgs{
+		Mode: "NX",
+		TTL:  expireTime,
+	})
+	if err := cmd.Err(); err != nil {
+		if errors.Is(err, redis.Nil) {
+			return false, nil
+		}
+		return false, err
+	}
+	return true, nil
 }
 
 func (c *Cache) Del(ctx context.Context, key string) error {

@@ -53,28 +53,20 @@ func NewHttpClient(opts ...HttpClientOption) *HttpClient {
 	c := resty.New().
 		SetRetryCount(retryCount).
 		SetAllowNonIdempotentRetry(true).
-		EnableRetryDefaultConditions().
-		SetRetryStrategy(func(_ *resty.Response, _ error) (time.Duration, error) {
-			// This is called before each retry; attempt index is not exposed here,
-			// so we use AddRetryHooks + a counter approach via closure instead.
-			// We return 0 and rely on the hook to determine the interval per attempt.
+		EnableRetryDefaultConditions()
+	c.SetRetryStrategy(func(resp *resty.Response, _ error) (time.Duration, error) {
+		if len(intervals) == 0 {
 			return 0, nil
-		})
-
-	// Use a stateless strategy: map attempt number to interval.
-	// resty's RetryStrategyFunc doesn't expose attempt index directly,
-	// so we implement the strategy via a counter protected by the request context.
-	// Since resty calls RetryStrategy once per retry, we track attempt count via hook.
-	attempt := 0
-	c.SetRetryStrategy(func(_ *resty.Response, _ error) (time.Duration, error) {
-		idx := attempt
-		if idx < len(intervals) {
-			return intervals[idx], nil
 		}
-		return intervals[len(intervals)-1], nil
-	})
-	c.AddRetryHooks(func(_ *resty.Response, _ error) {
-		attempt++
+		idx := 0
+		if resp != nil && resp.Request != nil && resp.Request.Attempt > 0 {
+			// resty attempts start at 1, while slice indexes start at 0.
+			idx = resp.Request.Attempt - 1
+		}
+		if idx >= len(intervals) {
+			idx = len(intervals) - 1
+		}
+		return intervals[idx], nil
 	})
 
 	h.client = c
@@ -97,7 +89,7 @@ func (h *HttpClient) Do(req *http.Request) (*http.Response, error) {
 
 	r := h.client.R().
 		SetContext(req.Context()).
-		SetHeaderMultiValues(map[string][]string(req.Header)).
+		SetHeaderMultiValues(req.Header).
 		SetDoNotParseResponse(true)
 
 	if len(bodyBytes) > 0 {
