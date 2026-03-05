@@ -1,0 +1,13 @@
+services:
+  oautomatic:
+    image: harbor.liasica.com/library/automatic:dev
+    container_name: automatic
+    restart: unless-stopped
+    volumes:
+      - ./configs:/app/configs
+    extra_hosts:
+      - 'host.docker.internal:host-gateway' # 映射宿主机IP
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
