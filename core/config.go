@@ -5,7 +5,9 @@
 package core
 
 import (
+	"fmt"
 	"os"
+	"time"
 
 	"sigs.k8s.io/yaml"
 
@@ -16,6 +18,7 @@ type Config struct {
 	Redis   *Redis
 	Lark    *Lark
 	Openwrt *Openwrt
+	Retry   *Retry
 	Users   []*User
 }
 
@@ -31,6 +34,12 @@ type Lark struct {
 
 type Openwrt struct {
 	Url string
+}
+
+type Retry struct {
+	FailedPunchInterval string
+
+	FailedPunchIntervalDuration time.Duration
 }
 
 type User struct {
@@ -71,6 +80,21 @@ func NewConfig(configPath string) (cfg *Config, err error) {
 	cfg = &Config{}
 	err = yaml.Unmarshal(data, cfg)
 	if err != nil {
+		return
+	}
+	if cfg.Retry == nil {
+		cfg.Retry = &Retry{}
+	}
+	if cfg.Retry.FailedPunchInterval == "" {
+		cfg.Retry.FailedPunchInterval = "10m"
+	}
+	cfg.Retry.FailedPunchIntervalDuration, err = time.ParseDuration(cfg.Retry.FailedPunchInterval)
+	if err != nil {
+		err = fmt.Errorf("invalid retry.failedPunchInterval: %w", err)
+		return
+	}
+	if cfg.Retry.FailedPunchIntervalDuration <= 0 {
+		err = fmt.Errorf("invalid retry.failedPunchInterval: must be greater than 0")
 		return
 	}
 

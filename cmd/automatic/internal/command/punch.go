@@ -13,6 +13,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -42,6 +43,7 @@ func NewPunch() (p *Punch) {
 			p.Query(),
 			p.Add(),
 			p.Del(),
+			p.RetryFailed(),
 			p.Run(),
 		},
 	}
@@ -141,8 +143,18 @@ func (p *Punch) Add() *cli.Command {
 
 			zap.S().Infof("手动添加打卡记录，用户：%s，时间：%s", userId, t)
 
-			return di.New(cmd, fx.Invoke(func(fs *feishu.Feishu) error {
-				return fs.UserFlowsCreate(userId, t.StdTime())
+			return di.New(cmd, fx.Invoke(func(cache *core.Cache, fs *feishu.Feishu) error {
+				err := fs.UserFlowsCreate(userId, t.StdTime())
+				if err == nil {
+					return nil
+				}
+
+				failedReq := p.newFailedPunchRequest("manual", userId, "", t.StdTime(), "command_add", err)
+				if recordErr := p.recordFailedPunch(ctx, cache, failedReq); recordErr != nil {
+					return fmt.Errorf("手动打卡失败，且记录失败请求失败: %v, recordError: %w", err, recordErr)
+				}
+				zap.S().Warnf("手动打卡失败，已记录失败请求，requestId: %s, user: %s, time: %s, error: %v", failedReq.RequestID, userId, t.StdTime().Format(time.DateTime), err)
+				return err
 			})).Start(ctx)
 		},
 	}
@@ -185,6 +197,24 @@ func (p *Punch) Del() *cli.Command {
 	}
 }
 
+// RetryFailed 立即重试失败的打卡记录
+func (p *Punch) RetryFailed() *cli.Command {
+	return &cli.Command{
+		Name:  "retry-failed",
+		Usage: "立即重试失败打卡记录",
+		Action: func(ctx context.Context, cmd *cli.Command) error {
+			return di.New(cmd, fx.Invoke(func(cfg *core.Config, cache *core.Cache, fs *feishu.Feishu) error {
+				result, err := p.retryFailedPunches(ctx, cfg, cache, fs, "command_retry_failed")
+				if err != nil {
+					return err
+				}
+				zap.S().Infof("失败打卡重试完成，总数: %d, 成功: %d, 失败: %d, 无效: %d", result.Total, result.Success, result.Failed, result.Invalid)
+				return nil
+			})).Start(ctx)
+		},
+	}
+}
+
 // Run 启动自动打卡
 func (p *Punch) Run() *cli.Command {
 	return &cli.Command{
@@ -193,16 +223,50 @@ func (p *Punch) Run() *cli.Command {
 		Description: "根据配置文件中的设置，开始自动打卡",
 		Action: func(ctx context.Context, cmd *cli.Command) error {
 			app := di.New(cmd, fx.Invoke(func(lc fx.Lifecycle, cfg *core.Config, cache *core.Cache, fs *feishu.Feishu, ow *openwrt.OpenWrt) {
+				retryStopCh := make(chan struct{})
+				var retryWG sync.WaitGroup
 				lc.Append(fx.Hook{
 					OnStart: func(context.Context) error {
+						startupResult, retryErr := p.retryFailedPunches(context.Background(), cfg, cache, fs, "startup")
+						if retryErr != nil {
+							zap.S().Errorf("启动失败打卡补偿重试失败，error: %v", retryErr)
+						} else if startupResult.Total > 0 {
+							zap.S().Infof("启动失败打卡补偿完成，总数: %d, 成功: %d, 失败: %d, 无效: %d", startupResult.Total, startupResult.Success, startupResult.Failed, startupResult.Invalid)
+						}
+
+						retryInterval := p.failedPunchRetryInterval(cfg)
+						retryWG.Add(1)
+						go func() {
+							defer retryWG.Done()
+							ticker := time.NewTicker(retryInterval)
+							defer ticker.Stop()
+							for {
+								select {
+								case <-ticker.C:
+									result, err := p.retryFailedPunches(context.Background(), cfg, cache, fs, "ticker")
+									if err != nil {
+										zap.S().Errorf("定时重试失败打卡失败，error: %v", err)
+										continue
+									}
+									if result.Total > 0 {
+										zap.S().Infof("定时重试失败打卡完成，总数: %d, 成功: %d, 失败: %d, 无效: %d", result.Total, result.Success, result.Failed, result.Invalid)
+									}
+								case <-retryStopCh:
+									return
+								}
+							}
+						}()
+
 						ow.AddHandler(func(event openwrt.DeviceEvent) {
 							p.doEvent(ctx, cfg, cache, fs, event)
 						})
 						ow.Start(1 * time.Minute)
-						zap.S().Infof("自动打卡服务已启动，轮询间隔: %s", time.Minute)
+						zap.S().Infof("自动打卡服务已启动，设备轮询间隔: %s, 失败打卡重试间隔: %s", time.Minute, retryInterval)
 						return nil
 					},
 					OnStop: func(context.Context) error {
+						close(retryStopCh)
+						retryWG.Wait()
 						ow.Stop()
 						zap.S().Info("自动打卡服务已停止")
 						return nil
@@ -316,7 +380,14 @@ func (p *Punch) tryCheckIn(ctx context.Context, cache *core.Cache, fs *feishu.Fe
 
 	err = fs.UserFlowsCreate(user.Id, checkTime)
 	if err != nil {
-		zap.S().Errorf("自动上班打卡失败，user: %s, mac: %s, time: %s, error: %v", user.Id, event.Device.Mac, checkTime.Format(time.DateTime), err)
+		failedReq := p.newFailedPunchRequest("checkin", user.Id, event.Device.Mac, checkTime, "event_online", err)
+		recordErr := p.recordFailedPunch(ctx, cache, failedReq)
+		if recordErr != nil {
+			zap.S().Errorf("自动上班打卡失败，且记录失败请求失败，user: %s, mac: %s, time: %s, error: %v, recordError: %v", user.Id, event.Device.Mac, checkTime.Format(time.DateTime), err, recordErr)
+			return
+		}
+		committed = true
+		zap.S().Warnf("自动上班打卡失败，已记录失败请求，requestId: %s, user: %s, mac: %s, time: %s, error: %v", failedReq.RequestID, user.Id, event.Device.Mac, checkTime.Format(time.DateTime), err)
 		return
 	}
 
@@ -380,7 +451,14 @@ func (p *Punch) tryCheckOut(ctx context.Context, cache *core.Cache, fs *feishu.F
 
 	err = fs.UserFlowsCreate(user.Id, checkTime)
 	if err != nil {
-		zap.S().Errorf("自动下班打卡失败，user: %s, mac: %s, time: %s, error: %v", user.Id, event.Device.Mac, checkTime.Format(time.DateTime), err)
+		failedReq := p.newFailedPunchRequest("checkout", user.Id, event.Device.Mac, checkTime, "event_offline", err)
+		recordErr := p.recordFailedPunch(ctx, cache, failedReq)
+		if recordErr != nil {
+			zap.S().Errorf("自动下班打卡失败，且记录失败请求失败，user: %s, mac: %s, time: %s, error: %v, recordError: %v", user.Id, event.Device.Mac, checkTime.Format(time.DateTime), err, recordErr)
+			return
+		}
+		committed = true
+		zap.S().Warnf("自动下班打卡失败，已记录失败请求，requestId: %s, user: %s, mac: %s, time: %s, error: %v", failedReq.RequestID, user.Id, event.Device.Mac, checkTime.Format(time.DateTime), err)
 		return
 	}
 
