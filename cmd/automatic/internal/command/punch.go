@@ -426,9 +426,26 @@ func (p *Punch) tryCheckOut(ctx context.Context, cache *core.Cache, fs *feishu.F
 		}
 	}()
 
-	var data *larkattendance.QueryUserFlowRespData
+	var checkInData *larkattendance.QueryUserFlowRespData
+	// 下班前先检查当天是否已有上班记录；没有则跳过下班打卡
+	checkInData, err = fs.UserFlowsQuery(user.Id, p.dayStart(now), earliestCheckOutTime)
+	if err != nil {
+		zap.S().Errorf("查询上班打卡记录失败，user: %s, error: %v", user.Id, err)
+		return
+	}
+	if !p.hasCheckInRecord(checkInData) {
+		committed = true
+		err = cache.Set(ctx, key, "skip:no_checkin_record", 24*time.Hour)
+		if err != nil {
+			zap.S().Errorf("写入下班打卡缓存失败，key: %s, error: %v", key, err)
+		}
+		zap.S().Infof("自动下班打卡跳过，未发现上班打卡记录，user: %s, mac: %s", user.Id, event.Device.Mac)
+		return
+	}
+
+	var checkOutData *larkattendance.QueryUserFlowRespData
 	// 下班打卡去重：仅看当日 18:00:00 到 24:00:00 是否已有记录
-	data, err = fs.UserFlowsQuery(user.Id, p.dayAtHour(now, 18), p.dayEnd(now))
+	checkOutData, err = fs.UserFlowsQuery(user.Id, p.dayAtHour(now, 18), p.dayEnd(now))
 	if err != nil {
 		zap.S().Errorf("查询下班打卡记录失败，user: %s, error: %v", user.Id, err)
 		return
@@ -438,7 +455,7 @@ func (p *Punch) tryCheckOut(ctx context.Context, cache *core.Cache, fs *feishu.F
 	checkTime := p.randomCheckOutTime(user, now)
 
 	// 已有下班记录则仅写入幂等标记，后续事件直接跳过
-	if p.hasCheckOutRecord(data) {
+	if p.hasCheckOutRecord(checkOutData) {
 		committed = true
 		err = cache.Set(ctx, key, checkTime.Format(time.DateTime), 24*time.Hour)
 		if err != nil {
