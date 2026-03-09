@@ -15,6 +15,9 @@ import (
 	"automatic/cmd/automatic/internal/command"
 )
 
+// version is injected at build time via -ldflags "-X main.version=..."
+var version = "v0.0.0-dev"
+
 // 定义全局 flags
 var globalFlags = []cli.Flag{
 	&cli.StringFlag{
@@ -54,7 +57,7 @@ func main() {
 	app := &cli.Command{
 		Name:    "automatic",
 		Usage:   "自动化工具，实现如：自动打卡等辅助工作的工具",
-		Version: "0.1.0",
+		Version: version,
 		Flags:   globalFlags,
 
 		// 子命令
@@ -62,6 +65,7 @@ func main() {
 			addGlobalFlags(command.NewPunch().Command),
 		},
 	}
+	zap.S().Infof("automatic version: %s", version)
 
 	if err := app.Run(context.Background(), os.Args); err != nil {
 		zap.S().Errorf("应用运行失败：%v", err)
