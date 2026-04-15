@@ -22,9 +22,9 @@ func New(cfg *core.Config, cache *core.Cache) *Feishu {
 		client: lark.NewClient(
 			cfg.Lark.AppId,
 			cfg.Lark.AppSecret,
-			lark.WithLogReqAtDebug(true),
 			lark.WithLogger(&Logger{}),
-			lark.WithLogLevel(larkcore.LogLevelDebug),
+			// 仅打印警告及以上级别，避免把每次 API 的请求/响应体刷到 console
+			lark.WithLogLevel(larkcore.LogLevelWarn),
 			lark.WithTokenCache(cache),
 			lark.WithEnableTokenCache(true),
 		),

@@ -146,6 +146,10 @@ func (p *Punch) Add() *cli.Command {
 			return di.New(cmd, fx.Invoke(func(cache *core.Cache, fs *feishu.Feishu) error {
 				err := fs.UserFlowsCreate(userId, t.StdTime())
 				if err == nil {
+					punchType := p.inferPunchType(t.StdTime())
+					if notifyErr := fs.NotifyPunchSuccess(userId, punchType, t.StdTime(), feishu.PunchSourceManualCLI); notifyErr != nil {
+						zap.S().Warnf("手动打卡成功通知发送失败，user: %s, error: %v", userId, notifyErr)
+					}
 					return nil
 				}
 
@@ -397,6 +401,9 @@ func (p *Punch) tryCheckIn(ctx context.Context, cache *core.Cache, fs *feishu.Fe
 		zap.S().Errorf("写入上班打卡缓存失败，key: %s, error: %v", key, err)
 	}
 	zap.S().Infof("自动上班打卡成功，user: %s, mac: %s, time: %s", user.Id, event.Device.Mac, checkTime.Format(time.DateTime))
+	if notifyErr := fs.NotifyPunchSuccess(user.Id, feishu.PunchTypeCheckIn, checkTime, feishu.PunchSourceAuto); notifyErr != nil {
+		zap.S().Warnf("自动上班打卡成功通知发送失败，user: %s, error: %v", user.Id, notifyErr)
+	}
 }
 
 func (p *Punch) tryCheckOut(ctx context.Context, cache *core.Cache, fs *feishu.Feishu, event openwrt.DeviceEvent, user *core.User, now time.Time) {
@@ -485,6 +492,9 @@ func (p *Punch) tryCheckOut(ctx context.Context, cache *core.Cache, fs *feishu.F
 		zap.S().Errorf("写入下班打卡缓存失败，key: %s, error: %v", key, err)
 	}
 	zap.S().Infof("自动下班打卡成功，user: %s, mac: %s, time: %s", user.Id, event.Device.Mac, checkTime.Format(time.DateTime))
+	if notifyErr := fs.NotifyPunchSuccess(user.Id, feishu.PunchTypeCheckOut, checkTime, feishu.PunchSourceAuto); notifyErr != nil {
+		zap.S().Warnf("自动下班打卡成功通知发送失败，user: %s, error: %v", user.Id, notifyErr)
+	}
 }
 
 func (p *Punch) hasCheckInRecord(data *larkattendance.QueryUserFlowRespData) bool {
@@ -543,6 +553,15 @@ func (p *Punch) dayAtHourMinute(t time.Time, hour int, minute int) time.Time {
 
 func (p *Punch) punchCacheKey(kind, userId string, now time.Time) string {
 	return fmt.Sprintf("automatic:punch:%s:%s:%s", kind, now.Format("20060102"), userId)
+}
+
+// inferPunchType 根据打卡时间推断上/下班类型，用于手动或重试场景
+// 规则：中午 12:00 之前视为上班，之后视为下班
+func (p *Punch) inferPunchType(t time.Time) string {
+	if t.Hour() < 12 {
+		return feishu.PunchTypeCheckIn
+	}
+	return feishu.PunchTypeCheckOut
 }
 
 func normalizeOffsets(firstOffset, secondOffset int) (int, int) {

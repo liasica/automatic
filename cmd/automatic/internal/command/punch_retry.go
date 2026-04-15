@@ -179,6 +179,15 @@ func (p *Punch) retryFailedPunches(ctx context.Context, cfg *core.Config, cache 
 			return result, fmt.Errorf("清理已成功的处理中打卡记录失败: %w", remErr)
 		}
 		zap.S().Infof("重试失败打卡成功，requestId: %s, user: %s, punchType: %s, retryCount: %d", record.RequestID, record.UserID, record.PunchType, record.RetryCount)
+
+		notifyType := record.PunchType
+		if notifyType != feishu.PunchTypeCheckIn && notifyType != feishu.PunchTypeCheckOut {
+			// 手动添加等未明确打卡类型的场景，按时间推断
+			notifyType = p.inferPunchType(checkTime)
+		}
+		if notifyErr := fs.NotifyPunchSuccess(record.UserID, notifyType, checkTime, feishu.PunchSourceRetry); notifyErr != nil {
+			zap.S().Warnf("重试打卡成功通知发送失败，requestId: %s, user: %s, error: %v", record.RequestID, record.UserID, notifyErr)
+		}
 	}
 	return result, nil
 }

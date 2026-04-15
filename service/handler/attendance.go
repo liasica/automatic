@@ -215,6 +215,15 @@ func (a *Attendance) Create(c echo.Context) error {
 		return c.JSON(http.StatusInternalServerError, echo.Map{"error": err.Error()})
 	}
 
+	punchType := feishu.PunchTypeCheckIn
+	if checkTime.Hour() >= 12 {
+		punchType = feishu.PunchTypeCheckOut
+	}
+	if notifyErr := a.feishu.NotifyPunchSuccess(req.UserID, punchType, checkTime, feishu.PunchSourceManual); notifyErr != nil {
+		// 通知失败不阻塞打卡结果
+		c.Logger().Warnf("手动添加打卡成功通知发送失败，user: %s, error: %v", req.UserID, notifyErr)
+	}
+
 	return c.JSON(http.StatusOK, echo.Map{"message": "打卡记录添加成功"})
 }
 
