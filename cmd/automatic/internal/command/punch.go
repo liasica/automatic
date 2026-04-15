@@ -223,10 +223,19 @@ func (p *Punch) RetryFailed() *cli.Command {
 func (p *Punch) Run() *cli.Command {
 	return &cli.Command{
 		Name:        "run",
-		Usage:       "开始自动打卡",
-		Description: "根据配置文件中的设置，开始自动打卡",
+		Usage:       "开始自动打卡（同时启动 Web Dashboard）",
+		Description: "根据配置文件中的设置，开始自动打卡，并在同一进程内启动 Web Dashboard；通过 --http-addr=\"\" 可禁用 Dashboard",
+		Flags: []cli.Flag{
+			&cli.StringFlag{
+				Name:  "http-addr",
+				Value: ":9876",
+				Usage: "Web Dashboard HTTP 监听地址，留空则不启动",
+			},
+		},
 		Action: func(ctx context.Context, cmd *cli.Command) error {
+			httpAddr := cmd.String("http-addr")
 			app := di.New(cmd, fx.Invoke(func(lc fx.Lifecycle, cfg *core.Config, cache *core.Cache, fs *feishu.Feishu, ow *openwrt.OpenWrt) {
+				registerHTTPServer(lc, httpAddr, cfg, fs)
 				retryStopCh := make(chan struct{})
 				var retryWG sync.WaitGroup
 				lc.Append(fx.Hook{

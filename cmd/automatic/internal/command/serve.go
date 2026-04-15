@@ -18,8 +18,6 @@ import (
 	"automatic/core"
 	"automatic/di"
 	"automatic/integration/feishu"
-	"automatic/service"
-	"automatic/service/handler"
 )
 
 // Serve Web Dashboard 命令
@@ -28,17 +26,19 @@ type Serve struct {
 }
 
 // NewServe 创建 Serve 命令
+// 该命令只启动 Web Dashboard，不涉及自动打卡；适用于仅前端联调场景
+// 生产部署建议使用 `punch run`，打卡与 Dashboard 合并在同一进程
 func NewServe() (s *Serve) {
 	s = &Serve{}
 	s.Command = &cli.Command{
 		Name:        "serve",
-		Usage:       "启动 Web Dashboard 服务",
-		Description: "启动 HTTP 服务器，提供打卡记录的 REST API",
+		Usage:       "仅启动 Web Dashboard 服务（不含自动打卡）",
+		Description: "仅启动 HTTP 服务器提供 REST API，用于前端开发联调；生产环境请使用 punch run",
 		Flags: []cli.Flag{
 			&cli.StringFlag{
 				Name:    "addr",
 				Aliases: []string{"a"},
-				Value:   ":8080",
+				Value:   ":9876",
 				Usage:   "HTTP 监听地址",
 			},
 		},
@@ -46,26 +46,7 @@ func NewServe() (s *Serve) {
 			addr := cmd.String("addr")
 
 			app := di.New(cmd, fx.Invoke(func(lc fx.Lifecycle, cfg *core.Config, fs *feishu.Feishu) {
-				attendance := handler.NewAttendance(fs, cfg)
-				overtime := handler.NewOvertime(fs, cfg)
-				auth := handler.NewAuth(fs, cfg)
-				srv := service.NewServer(addr, attendance, overtime, auth)
-
-				lc.Append(fx.Hook{
-					OnStart: func(context.Context) error {
-						go func() {
-							if err := srv.Start(); err != nil {
-								zap.S().Infof("HTTP 服务器已关闭: %v", err)
-							}
-						}()
-						zap.S().Infof("Web Dashboard 服务已启动，监听地址: %s", addr)
-						return nil
-					},
-					OnStop: func(ctx context.Context) error {
-						zap.S().Info("正在关闭 Web Dashboard 服务")
-						return srv.Shutdown(ctx)
-					},
-				})
+				registerHTTPServer(lc, addr, cfg, fs)
 			}))
 
 			if err := app.Start(ctx); err != nil {

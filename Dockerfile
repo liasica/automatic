@@ -13,4 +13,7 @@ COPY ./build/release/automatic /app/
 
 WORKDIR /app
 
-ENTRYPOINT ["/app/automatic", "punch", "run", "--config", "/app/configs/config.yaml"]
+# Web Dashboard 默认监听端口
+EXPOSE 9876
+
+ENTRYPOINT ["/app/automatic", "punch", "run", "--config", "/app/configs/config.yaml", "--http-addr", ":9876"]
