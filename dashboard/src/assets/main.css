@@ -1,0 +1,64 @@
+@import "tailwindcss";
+
+@utility grid-cols-config {
+  grid-template-columns: 1fr min-content 1fr;
+}
+
+/* Intercom 设计系统 */
+@theme {
+  /* 主色 */
+  --color-off-black: #111111;
+  --color-cream: #faf9f6;
+  --color-fin: #ff5600;
+
+  /* 中性色（暖调） */
+  --color-oat: #dedbd6;
+  --color-sand: #d3cec6;
+  --color-muted: #7b7b78;
+  --color-mid: #626260;
+  --color-dark: #313130;
+
+  /* 报表色板 */
+  --color-report-blue: #65b5ff;
+  --color-report-green: #0bdf50;
+  --color-report-red: #c41c1c;
+
+  /* 字体 */
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+@layer base {
+  button {
+    cursor: pointer;
+  }
+
+  html,
+  body {
+    background-color: var(--color-cream);
+    color: var(--color-off-black);
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  /* 暖色表单控件 */
+  input[type="datetime-local"],
+  input[type="date"],
+  select {
+    color-scheme: light;
+  }
+
+  /* 滚动条 */
+  ::-webkit-scrollbar {
+    width: 6px;
+  }
+
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    background: var(--color-oat);
+    border-radius: 3px;
+  }
+}

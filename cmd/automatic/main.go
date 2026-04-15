@@ -63,6 +63,7 @@ func main() {
 		// 子命令
 		Commands: []*cli.Command{
 			addGlobalFlags(command.NewPunch().Command),
+			addGlobalFlags(command.NewServe().Command),
 		},
 	}
 	zap.S().Infof("automatic version: %s", version)
