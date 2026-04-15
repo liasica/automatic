@@ -47,7 +47,9 @@ func NewServe() (s *Serve) {
 
 			app := di.New(cmd, fx.Invoke(func(lc fx.Lifecycle, cfg *core.Config, fs *feishu.Feishu) {
 				attendance := handler.NewAttendance(fs, cfg)
-				srv := service.NewServer(addr, attendance)
+				overtime := handler.NewOvertime(fs, cfg)
+				auth := handler.NewAuth(fs, cfg)
+				srv := service.NewServer(addr, attendance, overtime, auth)
 
 				lc.Append(fx.Hook{
 					OnStart: func(context.Context) error {

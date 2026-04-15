@@ -1,6 +1,8 @@
 <script setup lang="ts">
-import { ref, watch } from 'vue'
+import { computed, ref, watch } from 'vue'
 import type { AddRecordParams, UserInfo } from '@/types'
+import CustomSelect from '@/components/CustomSelect.vue'
+import CalendarPicker from '@/components/CalendarPicker.vue'
 
 const props = defineProps<{
   show: boolean
@@ -16,18 +18,39 @@ const emit = defineEmits<{
 const pad = (n: number) => String(n).padStart(2, '0')
 
 const selectedUser = ref('')
-const checkTime = ref('')
+const pickedDate = ref('')
+const pickedHour = ref('09')
+const pickedMinute = ref('00')
 
-watch(() => props.show, (val) => {
+const userOptions = computed(() =>
+  props.users.map(u => ({ value: u.id, label: u.id })),
+)
+
+const hourOptions = Array.from({ length: 24 }, (_, i) => ({
+  value: pad(i),
+  label: pad(i),
+}))
+
+const minuteOptions = Array.from({ length: 60 }, (_, i) => ({
+  value: pad(i),
+  label: pad(i),
+}))
+
+watch(() => props.show, val => {
   if (val) {
     selectedUser.value = props.defaultUserId
     const n = new Date()
-    checkTime.value = `${n.getFullYear()}-${pad(n.getMonth() + 1)}-${pad(n.getDate())}T${pad(n.getHours())}:${pad(n.getMinutes())}`
+    pickedDate.value = `${n.getFullYear()}-${pad(n.getMonth() + 1)}-${pad(n.getDate())}`
+    pickedHour.value = pad(n.getHours())
+    pickedMinute.value = pad(n.getMinutes())
   }
 })
 
+const canSubmit = computed(() => !!selectedUser.value && !!pickedDate.value)
+
 function handleSubmit() {
-  const formatted = checkTime.value.replace('T', ' ') + ':00'
+  if (!canSubmit.value) return
+  const formatted = `${pickedDate.value} ${pickedHour.value}:${pickedMinute.value}:00`
   emit('submit', {
     user_id: selectedUser.value,
     check_time: formatted,
@@ -53,24 +76,20 @@ function handleSubmit() {
           <!-- 用户选择 -->
           <div class="mb-5">
             <label class="mb-2 block font-mono text-xs uppercase tracking-wider text-muted">用户</label>
-            <select
-              v-model="selectedUser"
-              class="w-full rounded border border-oat bg-white px-4 py-3 text-sm text-off-black outline-none transition-colors focus:border-off-black"
-            >
-              <option v-for="user in users" :key="user.id" :value="user.id">
-                {{ user.id }}
-              </option>
-            </select>
+            <CustomSelect v-model="selectedUser" :options="userOptions" class="w-full [&>button]:w-full [&>button]:justify-between" />
           </div>
 
-          <!-- 时间选择 -->
+          <!-- 打卡时间 -->
           <div class="mb-8">
             <label class="mb-2 block font-mono text-xs uppercase tracking-wider text-muted">打卡时间</label>
-            <input
-              v-model="checkTime"
-              type="datetime-local"
-              class="w-full rounded border border-oat bg-white px-4 py-3 text-sm text-off-black outline-none transition-colors focus:border-off-black"
-            >
+            <div class="flex flex-wrap items-center gap-2">
+              <CalendarPicker v-model="pickedDate" />
+              <div class="flex items-center gap-1">
+                <CustomSelect v-model="pickedHour" :options="hourOptions" />
+                <span class="font-mono text-sm text-muted">:</span>
+                <CustomSelect v-model="pickedMinute" :options="minuteOptions" />
+              </div>
+            </div>
           </div>
 
           <div class="flex justify-end gap-3">
@@ -81,7 +100,8 @@ function handleSubmit() {
               取消
             </button>
             <button
-              class="rounded bg-off-black px-5 py-2.5 text-sm text-white transition-transform hover:scale-105 active:scale-95"
+              class="rounded bg-off-black px-5 py-2.5 text-sm text-white transition-transform hover:scale-105 active:scale-95 disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:scale-100"
+              :disabled="!canSubmit"
               @click="handleSubmit"
             >
               确认添加

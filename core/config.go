@@ -28,8 +28,10 @@ type Redis struct {
 }
 
 type Lark struct {
-	AppId     string
-	AppSecret string
+	AppId            string
+	AppSecret        string
+	OvertimeAppToken string // 加班记录多维表格 app_token
+	RedirectURL      string // 飞书 OAuth 回调完整 URL，需与飞书后台「安全设置 → 重定向URL」一致；为空时按请求自动推导
 }
 
 type Openwrt struct {

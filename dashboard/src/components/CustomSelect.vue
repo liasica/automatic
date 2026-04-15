@@ -54,7 +54,7 @@ onBeforeUnmount(() => document.removeEventListener('click', onClickOutside, true
     <Transition name="dropdown">
       <div
         v-if="open"
-        class="absolute left-0 top-full z-30 mt-1.5 min-w-full overflow-hidden rounded-lg border border-oat bg-white py-1 shadow-sm"
+        class="absolute left-0 top-full z-30 mt-1.5 max-h-72 min-w-full overflow-y-auto rounded-lg border border-oat bg-white py-1 shadow-sm"
       >
         <button
           v-for="opt in options"

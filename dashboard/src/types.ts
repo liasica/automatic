@@ -31,3 +31,20 @@ export interface AddRecordParams {
 }
 
 export type DayFilter = 'all' | 'workday' | 'non_workday' | 'weekend' | 'holiday'
+
+export interface OvertimeRecord {
+  record_id: string
+  fields: Record<string, unknown>
+}
+
+export interface OvertimeSchema {
+  table_id: string
+  fields: OvertimeSchemaField[]
+}
+
+export interface OvertimeSchemaField {
+  field_id: string
+  field_name: string
+  type: number
+  ui_type?: string
+}

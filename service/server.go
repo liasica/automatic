@@ -23,7 +23,7 @@ type Server struct {
 }
 
 // NewServer 创建 HTTP 服务器
-func NewServer(addr string, attendance *handler.Attendance) *Server {
+func NewServer(addr string, attendance *handler.Attendance, overtime *handler.Overtime, auth *handler.Auth) *Server {
 	e := echo.New()
 
 	// 隐藏 Banner 和端口输出
@@ -45,6 +45,17 @@ func NewServer(addr string, attendance *handler.Attendance) *Server {
 	records.GET("", attendance.Query)
 	records.POST("", attendance.Create)
 	records.DELETE("", attendance.Delete)
+
+	// 飞书授权路由
+	api.GET("/auth/feishu", auth.Redirect)
+	api.GET("/auth/feishu/callback", auth.Callback)
+
+	// 加班记录路由
+	ot := api.Group("/overtime")
+	ot.GET("/schema", overtime.Schema)
+	ot.GET("/records", overtime.Query)
+	ot.POST("/records", overtime.Create)
+	ot.PUT("/records/:record_id", overtime.Update)
 
 	// 嵌入前端静态文件，子目录 dist 作为根
 	distFS, _ := fs.Sub(dashboard.Dist, "dist")

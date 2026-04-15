@@ -99,6 +99,9 @@ function goToday() {
 
 const displayDate = computed(() => props.modelValue.replace(/-/g, '/'))
 
+// 日历图标 path（放在脚本里避免模板行超长）
+const calendarIconPath = 'M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 012.25-2.25h13.5A2.25 2.25 0 0121 7.5v11.25m-18 0A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75m-18 0v-7.5A2.25 2.25 0 015.25 9h13.5A2.25 2.25 0 0121 11.25v7.5'
+
 function onClickOutside(e: MouseEvent) {
   if (!wrapperRef.value?.contains(e.target as Node)) {
     open.value = false
@@ -115,8 +118,18 @@ onBeforeUnmount(() => document.removeEventListener('click', onClickOutside, true
       class="flex h-8 items-center gap-2 rounded border border-oat bg-white px-3 text-sm text-off-black outline-none transition-colors hover:border-sand focus:border-off-black"
       @click="open = !open"
     >
-      <svg class="h-4 w-4 text-muted" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
-        <path stroke-linecap="round" stroke-linejoin="round" d="M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 012.25-2.25h13.5A2.25 2.25 0 0121 7.5v11.25m-18 0A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75m-18 0v-7.5A2.25 2.25 0 015.25 9h13.5A2.25 2.25 0 0121 11.25v7.5" />
+      <svg
+        class="h-4 w-4 text-muted"
+        fill="none"
+        viewBox="0 0 24 24"
+        stroke="currentColor"
+        stroke-width="1.5"
+      >
+        <path
+          stroke-linecap="round"
+          stroke-linejoin="round"
+          :d="calendarIconPath"
+        />
       </svg>
       <span class="font-mono text-xs tracking-tight">{{ displayDate }}</span>
     </button>
@@ -132,7 +145,13 @@ onBeforeUnmount(() => document.removeEventListener('click', onClickOutside, true
             class="rounded p-1 text-muted transition-colors hover:bg-cream hover:text-off-black"
             @click="prevMonthNav"
           >
-            <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+            <svg
+              class="h-4 w-4"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+              stroke-width="2"
+            >
               <path stroke-linecap="round" stroke-linejoin="round" d="M15.75 19.5L8.25 12l7.5-7.5" />
             </svg>
           </button>
@@ -141,7 +160,13 @@ onBeforeUnmount(() => document.removeEventListener('click', onClickOutside, true
             class="rounded p-1 text-muted transition-colors hover:bg-cream hover:text-off-black"
             @click="nextMonthNav"
           >
-            <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+            <svg
+              class="h-4 w-4"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+              stroke-width="2"
+            >
               <path stroke-linecap="round" stroke-linejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5" />
             </svg>
           </button>
