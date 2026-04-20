@@ -266,6 +266,58 @@ function shortDate(date: string): string {
   const [, m, d] = date.split('-')
   return `${Number(m)}/${Number(d)}`
 }
+
+// 计算单日上班时长（最早上班 → 最晚下班）
+interface DurationInfo {
+  hours: number // 精确到 0.1 小时
+  days: number // 0 / 0.5 / 1
+}
+
+function calcDuration(dg: DateGroup): DurationInfo | null {
+  const checkins = dg.records.filter(r => r.label === 'checkin')
+  const checkouts = dg.records.filter(r => r.label === 'checkout')
+  if (checkins.length === 0 || checkouts.length === 0) return null
+
+  const earliest = Math.min(...checkins.map(r => r.timestamp))
+  const latest = Math.max(...checkouts.map(r => r.timestamp))
+  const hours = Math.round((latest - earliest) / 360) / 10 // 保留一位小数
+
+  let days: number
+  if (hours < 4) days = 0
+  else if (hours < 8) days = 0.5
+  else days = 1
+
+  return { hours, days }
+}
+
+function formatDuration(d: DurationInfo): string {
+  return `${d.days}天 · ${d.hours}h`
+}
+
+// 汇总某用户全部日期的总时长
+function totalDuration(dateGroups: DateGroup[]): DurationInfo | null {
+  let totalSeconds = 0
+  let count = 0
+
+  for (const dg of dateGroups) {
+    const checkins = dg.records.filter(r => r.label === 'checkin')
+    const checkouts = dg.records.filter(r => r.label === 'checkout')
+    if (checkins.length === 0 || checkouts.length === 0) continue
+    totalSeconds += Math.max(...checkouts.map(r => r.timestamp)) - Math.min(...checkins.map(r => r.timestamp))
+    count++
+  }
+
+  if (count === 0) return null
+  const hours = Math.round(totalSeconds / 360) / 10
+
+  let days = 0
+  for (const dg of dateGroups) {
+    const d = calcDuration(dg)
+    if (d) days += d.days
+  }
+
+  return { hours, days }
+}
 </script>
 
 <template>
@@ -314,6 +366,12 @@ function shortDate(date: string): string {
             </div>
             <span class="text-sm font-medium tracking-[-0.2px] text-off-black">{{ pg.user_id }}</span>
             <span class="rounded bg-cream px-2 py-0.5 font-mono text-xs text-muted">{{ pg.totalRecords }}条</span>
+            <span
+              v-if="totalDuration(pg.dateGroups)"
+              class="rounded bg-fin/10 px-2 py-0.5 font-mono text-xs text-fin"
+            >
+              合计 {{ totalDuration(pg.dateGroups)!.days }}天 · {{ totalDuration(pg.dateGroups)!.hours }}h
+            </span>
           </div>
 
           <!-- 缺卡汇总 -->
@@ -371,6 +429,12 @@ function shortDate(date: string): string {
                 </span>
               </div>
               <div class="flex items-center gap-2">
+                <span
+                  v-if="calcDuration(dg)"
+                  class="font-mono text-xs text-fin"
+                >
+                  {{ formatDuration(calcDuration(dg)!) }}
+                </span>
                 <span class="font-mono text-xs text-muted">{{ dg.records.length }}条</span>
                 <button
                   v-if="dg.records.length > 1"
