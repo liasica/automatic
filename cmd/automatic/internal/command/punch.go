@@ -536,12 +536,15 @@ func (p *Punch) hasCheckOutRecord(data *larkattendance.QueryUserFlowRespData) bo
 
 func (p *Punch) randomCheckInTime(user *core.User, baseTime time.Time) time.Time {
 	offset := randomInRange(user.CheckIn.From, user.CheckIn.To)
-	return baseTime.Add(-time.Duration(offset) * time.Minute)
+	t := baseTime.Add(-time.Duration(offset) * time.Minute)
+	// 随机化秒数，避免 ticker 固定秒偏移导致每天秒数相同
+	return t.Truncate(time.Minute).Add(time.Duration(rand.Intn(60)) * time.Second)
 }
 
 func (p *Punch) randomCheckOutTime(user *core.User, baseTime time.Time) time.Time {
 	offset := randomInRange(user.CheckOut.From, user.CheckOut.To)
-	return baseTime.Add(time.Duration(offset) * time.Minute)
+	t := baseTime.Add(time.Duration(offset) * time.Minute)
+	return t.Truncate(time.Minute).Add(time.Duration(rand.Intn(60)) * time.Second)
 }
 
 func (p *Punch) dayStart(t time.Time) time.Time {
