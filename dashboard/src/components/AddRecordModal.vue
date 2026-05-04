@@ -50,7 +50,9 @@ const canSubmit = computed(() => !!selectedUser.value && !!pickedDate.value)
 
 function handleSubmit() {
   if (!canSubmit.value) return
-  const formatted = `${pickedDate.value} ${pickedHour.value}:${pickedMinute.value}:00`
+  // 随机化秒数，避免固定 :00 偏移
+  const second = pad(Math.floor(Math.random() * 60))
+  const formatted = `${pickedDate.value} ${pickedHour.value}:${pickedMinute.value}:${second}`
   emit('submit', {
     user_id: selectedUser.value,
     check_time: formatted,
