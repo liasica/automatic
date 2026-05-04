@@ -26,16 +26,6 @@ const userOptions = computed(() =>
   props.users.map(u => ({ value: u.id, label: u.id })),
 )
 
-const hourOptions = Array.from({ length: 24 }, (_, i) => ({
-  value: pad(i),
-  label: pad(i),
-}))
-
-const minuteOptions = Array.from({ length: 60 }, (_, i) => ({
-  value: pad(i),
-  label: pad(i),
-}))
-
 watch(() => props.show, val => {
   if (val) {
     selectedUser.value = props.defaultUserId
@@ -46,13 +36,59 @@ watch(() => props.show, val => {
   }
 })
 
-const canSubmit = computed(() => !!selectedUser.value && !!pickedDate.value)
+// 仅保留数字字符
+function sanitizeDigits(v: string, max = 2) {
+  return v.replace(/\D/g, '').slice(0, max)
+}
+
+function onHourInput(e: Event) {
+  pickedHour.value = sanitizeDigits((e.target as HTMLInputElement).value)
+}
+
+function onMinuteInput(e: Event) {
+  pickedMinute.value = sanitizeDigits((e.target as HTMLInputElement).value)
+}
+
+// 失焦时校验范围并补零
+function normalizeHour() {
+  const n = Number.parseInt(pickedHour.value, 10)
+  if (Number.isNaN(n)) {
+    pickedHour.value = '00'
+    return
+  }
+  pickedHour.value = pad(Math.min(23, Math.max(0, n)))
+}
+
+function normalizeMinute() {
+  const n = Number.parseInt(pickedMinute.value, 10)
+  if (Number.isNaN(n)) {
+    pickedMinute.value = '00'
+    return
+  }
+  pickedMinute.value = pad(Math.min(59, Math.max(0, n)))
+}
+
+const hourValid = computed(() => {
+  const n = Number.parseInt(pickedHour.value, 10)
+  return !Number.isNaN(n) && n >= 0 && n <= 23
+})
+
+const minuteValid = computed(() => {
+  const n = Number.parseInt(pickedMinute.value, 10)
+  return !Number.isNaN(n) && n >= 0 && n <= 59
+})
+
+const canSubmit = computed(
+  () => !!selectedUser.value && !!pickedDate.value && hourValid.value && minuteValid.value,
+)
 
 function handleSubmit() {
   if (!canSubmit.value) return
   // 随机化秒数，避免固定 :00 偏移
   const second = pad(Math.floor(Math.random() * 60))
-  const formatted = `${pickedDate.value} ${pickedHour.value}:${pickedMinute.value}:${second}`
+  const hh = pad(Number.parseInt(pickedHour.value, 10))
+  const mm = pad(Number.parseInt(pickedMinute.value, 10))
+  const formatted = `${pickedDate.value} ${hh}:${mm}:${second}`
   emit('submit', {
     user_id: selectedUser.value,
     check_time: formatted,
@@ -87,9 +123,29 @@ function handleSubmit() {
             <div class="flex flex-wrap items-center gap-2">
               <CalendarPicker v-model="pickedDate" />
               <div class="flex items-center gap-1">
-                <CustomSelect v-model="pickedHour" :options="hourOptions" />
+                <input
+                  :value="pickedHour"
+                  type="text"
+                  inputmode="numeric"
+                  maxlength="2"
+                  placeholder="HH"
+                  class="w-14 rounded border border-oat bg-white px-2 py-1.5 text-center font-mono text-sm text-off-black outline-none focus:border-off-black"
+                  :class="{ 'border-red-400': !hourValid }"
+                  @input="onHourInput"
+                  @blur="normalizeHour"
+                >
                 <span class="font-mono text-sm text-muted">:</span>
-                <CustomSelect v-model="pickedMinute" :options="minuteOptions" />
+                <input
+                  :value="pickedMinute"
+                  type="text"
+                  inputmode="numeric"
+                  maxlength="2"
+                  placeholder="MM"
+                  class="w-14 rounded border border-oat bg-white px-2 py-1.5 text-center font-mono text-sm text-off-black outline-none focus:border-off-black"
+                  :class="{ 'border-red-400': !minuteValid }"
+                  @input="onMinuteInput"
+                  @blur="normalizeMinute"
+                >
               </div>
             </div>
           </div>
