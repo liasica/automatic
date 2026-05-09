@@ -116,7 +116,7 @@ type holidayManager struct {
 }
 
 // GetDayType 见 HolidayManager.GetDayType
-// 内存中存在该年数据 → 用内存判定；否则 → 包级 fallback
+// 内存中存在该年数据 → 用内存判定；否则 → 仅按星期几判定（不识别节假日）
 func (m *holidayManager) GetDayType(t time.Time) string {
 	ds := t.Format("2006-01-02")
 	year := t.Year()
@@ -132,13 +132,9 @@ func (m *holidayManager) GetDayType(t time.Time) string {
 		if yd.makeups[ds] {
 			return DayTypeWorkday
 		}
-		if t.Weekday() == time.Saturday || t.Weekday() == time.Sunday {
-			return DayTypeWeekend
-		}
-		return DayTypeWorkday
 	}
 
-	return fallbackGetDayType(t)
+	return weekdayDayType(t)
 }
 
 // setYear 在并发安全前提下覆盖单年数据
