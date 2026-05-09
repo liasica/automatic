@@ -6,7 +6,10 @@ package core
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
 	"time"
 )
 
@@ -56,4 +59,40 @@ func parseHolidayJSON(raw []byte) (*yearData, error) {
 		}
 	}
 	return yd, nil
+}
+
+// holidayCacheFile 拼接缓存文件路径
+func holidayCacheFile(dir string, year int) string {
+	return filepath.Join(dir, fmt.Sprintf("%d.json", year))
+}
+
+// persistYearJSON 原子写入年份缓存（先写 .tmp 再 rename）
+func persistYearJSON(dir string, year int, raw []byte) error {
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return fmt.Errorf("创建缓存目录失败: %w", err)
+	}
+
+	target := holidayCacheFile(dir, year)
+	tmp := target + ".tmp"
+	if err := os.WriteFile(tmp, raw, 0o644); err != nil {
+		return fmt.Errorf("写入缓存临时文件失败: %w", err)
+	}
+	if err := os.Rename(tmp, target); err != nil {
+		return fmt.Errorf("替换缓存文件失败: %w", err)
+	}
+	return nil
+}
+
+// loadYearFromDisk 读取并解析年份缓存
+// 文件不存在时返回 (nil, nil) 让调用方走网络/兜底；解析失败返回错误
+func loadYearFromDisk(dir string, year int) (*yearData, error) {
+	path := holidayCacheFile(dir, year)
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("读取缓存文件失败: %w", err)
+	}
+	return parseHolidayJSON(raw)
 }

@@ -61,3 +61,27 @@ func TestParseHolidayJSON(t *testing.T) {
 	require.False(t, yd.holidays["2026-05-09"])
 	require.False(t, yd.makeups["2026-05-01"])
 }
+
+// TestPersistAndLoadYear 验证写入再读取数据一致
+func TestPersistAndLoadYear(t *testing.T) {
+	dir := t.TempDir()
+	raw := []byte(`{"year":2026,"days":[
+		{"name":"劳动节","date":"2026-05-01","isOffDay":true},
+		{"name":"劳动节","date":"2026-05-09","isOffDay":false}
+	]}`)
+
+	require.NoError(t, persistYearJSON(dir, 2026, raw))
+
+	yd, err := loadYearFromDisk(dir, 2026)
+	require.NoError(t, err)
+	require.True(t, yd.holidays["2026-05-01"])
+	require.True(t, yd.makeups["2026-05-09"])
+}
+
+// TestLoadYear_Missing 文件不存在时返回 nil, nil（让调用方继续走网络/兜底）
+func TestLoadYear_Missing(t *testing.T) {
+	dir := t.TempDir()
+	yd, err := loadYearFromDisk(dir, 2099)
+	require.NoError(t, err)
+	require.Nil(t, yd)
+}
