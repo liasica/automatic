@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sync"
 	"time"
 )
 
@@ -95,4 +96,47 @@ func loadYearFromDisk(dir string, year int) (*yearData, error) {
 		return nil, fmt.Errorf("读取缓存文件失败: %w", err)
 	}
 	return parseHolidayJSON(raw)
+}
+
+// holidayManager 是 HolidayManager 的默认实现
+type holidayManager struct {
+	cacheDir string
+	mu       sync.RWMutex
+	years    map[int]*yearData
+
+	// stop 关闭后会终止后台刷新 goroutine
+	stop chan struct{}
+}
+
+// GetDayType 见 HolidayManager.GetDayType
+// 内存中存在该年数据 → 用内存判定；否则 → 包级 fallback
+func (m *holidayManager) GetDayType(t time.Time) string {
+	ds := t.Format("2006-01-02")
+	year := t.Year()
+
+	m.mu.RLock()
+	yd, ok := m.years[year]
+	m.mu.RUnlock()
+
+	if ok {
+		if yd.holidays[ds] {
+			return DayTypeHoliday
+		}
+		if yd.makeups[ds] {
+			return DayTypeWorkday
+		}
+		if t.Weekday() == time.Saturday || t.Weekday() == time.Sunday {
+			return DayTypeWeekend
+		}
+		return DayTypeWorkday
+	}
+
+	return fallbackGetDayType(t)
+}
+
+// setYear 在并发安全前提下覆盖单年数据
+func (m *holidayManager) setYear(year int, yd *yearData) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.years[year] = yd
 }

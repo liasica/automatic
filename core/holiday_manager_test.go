@@ -85,3 +85,33 @@ func TestLoadYear_Missing(t *testing.T) {
 	require.NoError(t, err)
 	require.Nil(t, yd)
 }
+
+// TestManagerGetDayType_FromMemory years 已加载时返回内存数据
+func TestManagerGetDayType_FromMemory(t *testing.T) {
+	m := newTestManager(t.TempDir())
+	m.years[2026] = &yearData{
+		holidays: map[string]bool{"2026-05-01": true},
+		makeups:  map[string]bool{"2026-05-09": true},
+	}
+
+	require.Equal(t, DayTypeHoliday, m.GetDayType(time.Date(2026, 5, 1, 12, 0, 0, 0, time.Local)))
+	require.Equal(t, DayTypeWorkday, m.GetDayType(time.Date(2026, 5, 9, 12, 0, 0, 0, time.Local)))
+	require.Equal(t, DayTypeWorkday, m.GetDayType(time.Date(2026, 5, 11, 12, 0, 0, 0, time.Local))) // 普通周一
+	require.Equal(t, DayTypeWeekend, m.GetDayType(time.Date(2026, 5, 16, 12, 0, 0, 0, time.Local))) // 普通周六
+}
+
+// TestManagerGetDayType_Fallback years 未加载该年时回退包级 fallback
+func TestManagerGetDayType_Fallback(t *testing.T) {
+	m := newTestManager(t.TempDir())
+	// 不预置 m.years[2026]，应走 fallback
+	require.Equal(t, DayTypeHoliday, m.GetDayType(time.Date(2026, 5, 1, 0, 0, 0, 0, time.Local)))
+	require.Equal(t, DayTypeWorkday, m.GetDayType(time.Date(2026, 5, 9, 0, 0, 0, 0, time.Local))) // hotfix 命中
+}
+
+// newTestManager 构造一个不启动后台 goroutine 的 manager 用于纯逻辑测试
+func newTestManager(cacheDir string) *holidayManager {
+	return &holidayManager{
+		cacheDir: cacheDir,
+		years:    make(map[int]*yearData),
+	}
+}
