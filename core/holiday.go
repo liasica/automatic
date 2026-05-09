@@ -4,7 +4,10 @@
 
 package core
 
-import "time"
+import (
+	"sync/atomic"
+	"time"
+)
 
 const (
 	DayTypeWorkday = "workday" // 工作日
@@ -12,43 +15,13 @@ const (
 	DayTypeHoliday = "holiday" // 法定节假日
 )
 
-// 国家法定节假日（每年根据国务院发布的放假通知更新）
-var nationalHolidays = map[string]bool{
-	// ── 2025 ──
-	"2025-01-01": true, // 元旦
-	"2025-01-28": true, // 春节
-	"2025-01-29": true,
-	"2025-01-30": true,
-	"2025-01-31": true,
-	"2025-02-01": true,
-	"2025-02-02": true,
-	"2025-02-03": true,
-	"2025-02-04": true,
-	"2025-04-04": true, // 清明节
-	"2025-04-05": true,
-	"2025-04-06": true,
-	"2025-05-01": true, // 劳动节
-	"2025-05-02": true,
-	"2025-05-03": true,
-	"2025-05-04": true,
-	"2025-05-05": true,
-	"2025-05-31": true, // 端午节
-	"2025-06-01": true,
-	"2025-06-02": true,
-	"2025-10-01": true, // 国庆节+中秋节
-	"2025-10-02": true,
-	"2025-10-03": true,
-	"2025-10-04": true,
-	"2025-10-05": true,
-	"2025-10-06": true,
-	"2025-10-07": true,
-	"2025-10-08": true,
-
-	// ── 2026（预估，以国务院正式通知为准）──
+// fallbackHolidays 兜底法定节假日（仅当 manager 未注入或缺失对应年份数据时使用）
+// 数据源：国务院 2026 年节假日通知（与 holiday-cn 一致）
+// 2027 数据待国务院发布后由 holiday-cn 自动覆盖，本兜底不再补
+var fallbackHolidays = map[string]bool{
+	// ── 2026 ──
 	"2026-01-01": true, // 元旦
-	"2026-01-02": true,
-	"2026-01-03": true,
-	"2026-02-15": true, // 春节（正月初一 2/17）
+	"2026-02-15": true, // 春节
 	"2026-02-16": true,
 	"2026-02-17": true,
 	"2026-02-18": true,
@@ -76,30 +49,55 @@ var nationalHolidays = map[string]bool{
 	"2026-10-08": true,
 }
 
-// 调休工作日：原本是周末但调整为上班
-var makeupWorkdays = map[string]bool{
-	// ── 2025 ──
-	"2025-01-26": true, // 春节调休
-	"2025-02-08": true, // 春节调休
-	"2025-04-27": true, // 劳动节调休
-	"2025-09-28": true, // 国庆调休
-	"2025-10-11": true, // 国庆调休
-
-	// ── 2026（预估）──
+// fallbackMakeupWorkdays 兜底调休工作日（仅 2026；含本次发现漏配的 2026-05-09）
+var fallbackMakeupWorkdays = map[string]bool{
 	"2026-02-14": true, // 春节调休
 	"2026-02-22": true, // 春节调休
 	"2026-04-26": true, // 劳动节调休
+	"2026-05-09": true, // 劳动节调休（hotfix：原硬编码漏配）
 	"2026-09-27": true, // 国庆调休
 	"2026-10-10": true, // 国庆调休
 }
 
+// holidayManagerHolder 包级单例 holder；fx 启动时由 SetHolidayManager 安装
+var holidayManagerHolder atomic.Pointer[HolidayManager]
+
+// SetHolidayManager 安装 manager 单例（由 fx Lifecycle.OnStart 调用）
+// 重复调用会覆盖旧引用；传 nil 会清空（仅测试用）
+func SetHolidayManager(m HolidayManager) {
+	if m == nil {
+		holidayManagerHolder.Store(nil)
+		return
+	}
+	holidayManagerHolder.Store(&m)
+}
+
+// getHolidayManager 取当前 manager；未安装返回 nil
+func getHolidayManager() HolidayManager {
+	p := holidayManagerHolder.Load()
+	if p == nil {
+		return nil
+	}
+	return *p
+}
+
 // GetDayType 获取日期类型
+// 优先使用注入的 HolidayManager（每日刷新真实数据）；未注入或对应年份缺失时回退到包内兜底 maps
 func GetDayType(t time.Time) string {
+	if m := getHolidayManager(); m != nil {
+		return m.GetDayType(t)
+	}
+	return fallbackGetDayType(t)
+}
+
+// fallbackGetDayType 仅依赖包内 fallback maps 的判定逻辑
+// manager 未注入或对应年份既无内存数据也无磁盘缓存时使用
+func fallbackGetDayType(t time.Time) string {
 	ds := t.Format("2006-01-02")
-	if nationalHolidays[ds] {
+	if fallbackHolidays[ds] {
 		return DayTypeHoliday
 	}
-	if makeupWorkdays[ds] {
+	if fallbackMakeupWorkdays[ds] {
 		return DayTypeWorkday
 	}
 	if t.Weekday() == time.Saturday || t.Weekday() == time.Sunday {

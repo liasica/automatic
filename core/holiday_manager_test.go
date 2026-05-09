@@ -1,0 +1,43 @@
+// Copyright (C) automatic. 2026-present.
+//
+// Created at 2026-05-09, by liasica
+
+package core
+
+import (
+	"testing"
+	"time"
+
+	"github.com/stretchr/testify/require"
+)
+
+// TestFallbackGetDayType_2026_05_09 回归测试：劳动节调休工作日不应被识别为周末
+func TestFallbackGetDayType_2026_05_09(t *testing.T) {
+	day := time.Date(2026, 5, 9, 0, 0, 0, 0, time.Local)
+	require.Equal(t, DayTypeWorkday, fallbackGetDayType(day))
+}
+
+// TestFallbackGetDayType_Holiday 兜底节假日命中
+func TestFallbackGetDayType_Holiday(t *testing.T) {
+	day := time.Date(2026, 5, 1, 0, 0, 0, 0, time.Local) // 劳动节
+	require.Equal(t, DayTypeHoliday, fallbackGetDayType(day))
+}
+
+// TestFallbackGetDayType_Weekend 普通周末
+func TestFallbackGetDayType_Weekend(t *testing.T) {
+	day := time.Date(2026, 5, 16, 0, 0, 0, 0, time.Local) // 周六，非节假日
+	require.Equal(t, DayTypeWeekend, fallbackGetDayType(day))
+}
+
+// TestFallbackGetDayType_PlainWorkday 普通工作日
+func TestFallbackGetDayType_PlainWorkday(t *testing.T) {
+	day := time.Date(2026, 5, 11, 0, 0, 0, 0, time.Local) // 周一
+	require.Equal(t, DayTypeWorkday, fallbackGetDayType(day))
+}
+
+// TestGetDayType_NoManager_FallsBack manager 未注入时 GetDayType 走 fallback
+func TestGetDayType_NoManager_FallsBack(t *testing.T) {
+	SetHolidayManager(nil) // 清空（防止其他测试残留）
+	day := time.Date(2026, 5, 9, 0, 0, 0, 0, time.Local)
+	require.Equal(t, DayTypeWorkday, GetDayType(day))
+}
