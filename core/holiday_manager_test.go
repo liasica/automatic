@@ -41,3 +41,23 @@ func TestGetDayType_NoManager_FallsBack(t *testing.T) {
 	day := time.Date(2026, 5, 9, 0, 0, 0, 0, time.Local)
 	require.Equal(t, DayTypeWorkday, GetDayType(day))
 }
+
+// TestParseHolidayJSON 验证 holiday-cn 的 JSON schema 解析
+func TestParseHolidayJSON(t *testing.T) {
+	raw := []byte(`{
+		"$schema": "https://example.org/schema",
+		"year": 2026,
+		"papers": ["paper1"],
+		"days": [
+			{"name": "劳动节", "date": "2026-05-01", "isOffDay": true},
+			{"name": "劳动节", "date": "2026-05-09", "isOffDay": false}
+		]
+	}`)
+
+	yd, err := parseHolidayJSON(raw)
+	require.NoError(t, err)
+	require.True(t, yd.holidays["2026-05-01"])
+	require.True(t, yd.makeups["2026-05-09"])
+	require.False(t, yd.holidays["2026-05-09"])
+	require.False(t, yd.makeups["2026-05-01"])
+}
