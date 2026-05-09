@@ -35,6 +35,9 @@ func New(cmd *cli.Command, opts ...fx.Option) *fx.App {
 			openwrt.New,
 		),
 
+		// 全局 Modules
+		core.HolidayModule,
+
 		// 合并选项
 		fx.Options(opts...),
 	)
