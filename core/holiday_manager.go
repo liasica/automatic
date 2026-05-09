@@ -175,3 +175,99 @@ func (m *holidayManager) refreshYear(ctx context.Context, year int) error {
 	m.setYear(year, yd)
 	return nil
 }
+
+// holidayURLTemplate 默认数据源 URL 模板
+const holidayURLTemplate = "https://raw.githubusercontent.com/NateScarlet/holiday-cn/master/%d.json"
+
+// holidayCacheDir 默认缓存目录（相对工作目录）
+const holidayCacheDir = "./holidays"
+
+// NewHolidayManager 构造默认 manager（不启动后台刷新；调用 Start 才启动）
+func NewHolidayManager() HolidayManager {
+	return &holidayManager{
+		urlTemplate: holidayURLTemplate,
+		httpClient: resty.New().
+			SetTimeout(30 * time.Second).
+			SetRetryCount(3).
+			SetRetryWaitTime(2 * time.Second).
+			SetRetryMaxWaitTime(10 * time.Second),
+		cacheDir: holidayCacheDir,
+		years:    make(map[int]*yearData),
+		stop:     make(chan struct{}),
+	}
+}
+
+// Start 启动 manager：先加载磁盘缓存，再异步拉取与每日刷新
+// 调用方应在 fx Lifecycle.OnStart 内调用
+func (m *holidayManager) Start(_ context.Context) error {
+	if err := os.MkdirAll(m.cacheDir, 0o755); err != nil {
+		return fmt.Errorf("创建节假日缓存目录失败: %w", err)
+	}
+
+	// 启动时把磁盘上 [thisYear, thisYear+1] 的缓存先装进内存
+	now := time.Now()
+	for _, y := range []int{now.Year(), now.Year() + 1} {
+		yd, err := loadYearFromDisk(m.cacheDir, y)
+		if err != nil {
+			zap.S().Warnf("加载 %d 节假日缓存失败: %v", y, err)
+			continue
+		}
+		if yd != nil {
+			m.setYear(y, yd)
+		}
+	}
+
+	go m.refreshLoop()
+	return nil
+}
+
+// Stop 停止后台刷新（fx Lifecycle.OnStop 调用）
+func (m *holidayManager) Stop(_ context.Context) error {
+	select {
+	case <-m.stop:
+		// 已关闭
+	default:
+		close(m.stop)
+	}
+	return nil
+}
+
+// refreshLoop 后台 goroutine：立即拉一次 → 等到次日 00:05 → 之后每 24h 触发
+func (m *holidayManager) refreshLoop() {
+	m.refreshAll()
+
+	for {
+		next := nextRefreshTime(time.Now())
+		timer := time.NewTimer(time.Until(next))
+		select {
+		case <-m.stop:
+			timer.Stop()
+			return
+		case <-timer.C:
+			m.refreshAll()
+		}
+	}
+}
+
+// refreshAll 刷新今年与次年
+func (m *holidayManager) refreshAll() {
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+	defer cancel()
+
+	now := time.Now()
+	for _, y := range []int{now.Year(), now.Year() + 1} {
+		if err := m.refreshYear(ctx, y); err != nil {
+			zap.S().Warnf("刷新 %d 节假日失败: %v", y, err)
+		}
+	}
+}
+
+// nextRefreshTime 返回下一个 00:05（本地时区）
+func nextRefreshTime(now time.Time) time.Time {
+	loc := now.Location()
+	next := time.Date(now.Year(), now.Month(), now.Day(), 0, 5, 0, 0, loc)
+	if !next.After(now) {
+		next = next.Add(24 * time.Hour)
+	}
+	return next
+}

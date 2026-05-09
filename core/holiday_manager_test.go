@@ -168,3 +168,21 @@ func TestRefreshYear_NetworkError_KeepsOldData(t *testing.T) {
 	// 旧数据仍在
 	require.Equal(t, DayTypeWorkday, m.GetDayType(time.Date(2026, 5, 9, 0, 0, 0, 0, time.Local)))
 }
+
+// TestNextRefreshTime_AfterCutoff 当前时间在 00:05 之后，应返回明日 00:05
+func TestNextRefreshTime_AfterCutoff(t *testing.T) {
+	loc := time.FixedZone("test", 0)
+	now := time.Date(2026, 5, 9, 8, 0, 0, 0, loc)
+	got := nextRefreshTime(now)
+	want := time.Date(2026, 5, 10, 0, 5, 0, 0, loc)
+	require.Equal(t, want, got)
+}
+
+// TestNextRefreshTime_BeforeCutoff 当前时间在 00:05 之前，应返回今日 00:05
+func TestNextRefreshTime_BeforeCutoff(t *testing.T) {
+	loc := time.FixedZone("test", 0)
+	now := time.Date(2026, 5, 9, 0, 3, 0, 0, loc)
+	got := nextRefreshTime(now)
+	want := time.Date(2026, 5, 9, 0, 5, 0, 0, loc)
+	require.Equal(t, want, got)
+}
