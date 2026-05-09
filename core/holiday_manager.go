@@ -5,13 +5,18 @@
 package core
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/http"
 	"os"
 	"path/filepath"
 	"sync"
 	"time"
+
+	"go.uber.org/zap"
+	"resty.dev/v3"
 )
 
 // HolidayManager 节假日数据访问接口
@@ -100,9 +105,11 @@ func loadYearFromDisk(dir string, year int) (*yearData, error) {
 
 // holidayManager 是 HolidayManager 的默认实现
 type holidayManager struct {
-	cacheDir string
-	mu       sync.RWMutex
-	years    map[int]*yearData
+	urlTemplate string // 形如 "https://.../%d.json"
+	httpClient  *resty.Client
+	cacheDir    string
+	mu          sync.RWMutex
+	years       map[int]*yearData
 
 	// stop 关闭后会终止后台刷新 goroutine
 	stop chan struct{}
@@ -139,4 +146,32 @@ func (m *holidayManager) setYear(year int, yd *yearData) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.years[year] = yd
+}
+
+// refreshYear 拉取指定年份数据，成功则更新内存并落盘；失败保留旧数据
+func (m *holidayManager) refreshYear(ctx context.Context, year int) error {
+	url := fmt.Sprintf(m.urlTemplate, year)
+	resp, err := m.httpClient.R().
+		SetContext(ctx).
+		Get(url)
+	if err != nil {
+		return fmt.Errorf("拉取 %d 节假日失败: %w", year, err)
+	}
+	if resp.StatusCode() != http.StatusOK {
+		return fmt.Errorf("拉取 %d 节假日返回状态码 %d", year, resp.StatusCode())
+	}
+
+	body := resp.Bytes()
+	yd, err := parseHolidayJSON(body)
+	if err != nil {
+		return fmt.Errorf("解析 %d 节假日失败: %w", year, err)
+	}
+
+	if err := persistYearJSON(m.cacheDir, year, body); err != nil {
+		// 落盘失败仅告警，不影响内存更新
+		zap.S().Warnf("写入 %d 节假日缓存失败: %v", year, err)
+	}
+
+	m.setYear(year, yd)
+	return nil
 }

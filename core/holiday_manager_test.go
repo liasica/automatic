@@ -5,10 +5,14 @@
 package core
 
 import (
+	"context"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/require"
+	"resty.dev/v3"
 )
 
 // TestFallbackGetDayType_2026_05_09 回归测试：劳动节调休工作日不应被识别为周末
@@ -114,4 +118,53 @@ func newTestManager(cacheDir string) *holidayManager {
 		cacheDir: cacheDir,
 		years:    make(map[int]*yearData),
 	}
+}
+
+// TestRefreshYear_Success 拉取成功时更新内存并写入缓存
+func TestRefreshYear_Success(t *testing.T) {
+	body := `{"year":2026,"days":[
+		{"name":"劳动节","date":"2026-05-01","isOffDay":true},
+		{"name":"劳动节","date":"2026-05-09","isOffDay":false}
+	]}`
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		require.Equal(t, "/2026.json", r.URL.Path)
+		_, _ = w.Write([]byte(body))
+	}))
+	defer srv.Close()
+
+	dir := t.TempDir()
+	m := newTestManager(dir)
+	m.urlTemplate = srv.URL + "/%d.json"
+	m.httpClient = resty.New().SetTimeout(2 * time.Second)
+
+	require.NoError(t, m.refreshYear(context.Background(), 2026))
+
+	require.Equal(t, DayTypeWorkday, m.GetDayType(time.Date(2026, 5, 9, 0, 0, 0, 0, time.Local)))
+
+	// 已落盘
+	yd, err := loadYearFromDisk(dir, 2026)
+	require.NoError(t, err)
+	require.True(t, yd.makeups["2026-05-09"])
+}
+
+// TestRefreshYear_NetworkError_KeepsOldData 网络失败不清空已有内存数据
+func TestRefreshYear_NetworkError_KeepsOldData(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "boom", http.StatusInternalServerError)
+	}))
+	defer srv.Close()
+
+	m := newTestManager(t.TempDir())
+	m.urlTemplate = srv.URL + "/%d.json"
+	m.httpClient = resty.New().SetTimeout(500 * time.Millisecond)
+	m.years[2026] = &yearData{
+		holidays: map[string]bool{},
+		makeups:  map[string]bool{"2026-05-09": true},
+	}
+
+	err := m.refreshYear(context.Background(), 2026)
+	require.Error(t, err)
+
+	// 旧数据仍在
+	require.Equal(t, DayTypeWorkday, m.GetDayType(time.Date(2026, 5, 9, 0, 0, 0, 0, time.Local)))
 }
