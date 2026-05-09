@@ -58,5 +58,6 @@ Temporary Items
 build/
 .claude
 
-# holiday-cn 运行时缓存（不入库；保留目录与 .gitkeep）
-core/holidays/*.json
+# holiday-cn 运行时缓存（不入库；保留 core/holidays/.gitkeep）
+**/holidays/*.json
+/holidays/
