@@ -237,7 +237,9 @@ func (p *Punch) Run() *cli.Command {
 			app := di.New(cmd, fx.Invoke(func(lc fx.Lifecycle, cfg *core.Config, cache *core.Cache, fs *feishu.Feishu, ow *openwrt.OpenWrt) {
 				registerHTTPServer(lc, httpAddr, cfg, fs)
 				retryStopCh := make(chan struct{})
+				fallbackStopCh := make(chan struct{})
 				var retryWG sync.WaitGroup
+				var fallbackWG sync.WaitGroup
 				lc.Append(fx.Hook{
 					OnStart: func(context.Context) error {
 						startupResult, retryErr := p.retryFailedPunches(context.Background(), cfg, cache, fs, "startup")
@@ -270,6 +272,8 @@ func (p *Punch) Run() *cli.Command {
 							}
 						}()
 
+						p.startFallbackScheduler(cfg, cache, fs, fallbackStopCh, &fallbackWG)
+
 						ow.AddHandler(func(event openwrt.DeviceEvent) {
 							p.doEvent(ctx, cfg, cache, fs, event)
 						})
@@ -280,6 +284,8 @@ func (p *Punch) Run() *cli.Command {
 					OnStop: func(context.Context) error {
 						close(retryStopCh)
 						retryWG.Wait()
+						close(fallbackStopCh)
+						fallbackWG.Wait()
 						ow.Stop()
 						zap.S().Info("自动打卡服务已停止")
 						return nil
