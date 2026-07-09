@@ -21,8 +21,9 @@ const overtimeSaving = ref(false)
 
 const now = new Date()
 const today = now.toISOString().slice(0, 10)
-const monthStart = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`
-const lastQuery = ref<QueryParams>({ from: monthStart, to: today })
+const ym = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
+const monthEnd = `${ym}-${String(new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate()).padStart(2, '0')}`
+const lastQuery = ref<QueryParams>({ from: `${ym}-01`, to: monthEnd })
 const dayFilter = ref<DayFilter>('all')
 
 const defaultUserId = computed(() => users.value[0]?.id ?? '')
@@ -82,13 +83,16 @@ async function handleOvertimeCreate(fields: Record<string, unknown>) {
   }
 }
 
-async function handleAdd(params: AddRecordParams) {
-  const success = await addRecord(params)
-  if (success) {
-    showAddModal.value = false
-    await queryRecords(lastQuery.value)
+async function handleAdd(paramsList: AddRecordParams[]) {
+  for (const params of paramsList) {
+    const success = await addRecord(params)
+    if (!success) {
+      if (error.value) showError(error.value)
+      return
+    }
   }
-  else if (error.value) showError(error.value)
+  showAddModal.value = false
+  await queryRecords(lastQuery.value)
 }
 
 function handleDeleteClick(recordIds: string[]) {

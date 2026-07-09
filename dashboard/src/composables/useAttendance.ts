@@ -1,7 +1,21 @@
 import { ref } from 'vue'
-import type { AddRecordParams, QueryParams, UserGroup, UserInfo } from '@/types'
+import type { AddRecordParams, AttendanceRecord, QueryParams, UserGroup, UserInfo } from '@/types'
 
 const API_BASE = '/api'
+
+// 查询指定用户某段日期的打卡记录（独立请求，不影响列表状态）；to 省略时仅查 from 当天
+export async function queryUserRecords(userId: string, from: string, to?: string): Promise<AttendanceRecord[]> {
+  const query = new URLSearchParams({ from, user_id: userId })
+  if (to) {
+    query.set('to', to)
+  }
+  const res = await fetch(`${API_BASE}/attendance/records?${query.toString()}`)
+  if (!res.ok) {
+    throw new Error(`查询打卡记录失败: ${res.status}`)
+  }
+  const data = await res.json() as { groups: UserGroup[] }
+  return data.groups?.[0]?.records ?? []
+}
 
 export function useAttendance() {
   const groups = ref<UserGroup[]>([])

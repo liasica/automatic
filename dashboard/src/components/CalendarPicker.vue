@@ -3,6 +3,8 @@ import { computed, ref, watch, onMounted, onBeforeUnmount } from 'vue'
 
 const props = defineProps<{
   modelValue: string
+  // 内嵌模式：直接平铺日历面板，不渲染触发按钮
+  inline?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -103,6 +105,7 @@ const displayDate = computed(() => props.modelValue.replace(/-/g, '/'))
 const calendarIconPath = 'M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 012.25-2.25h13.5A2.25 2.25 0 0121 7.5v11.25m-18 0A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75m-18 0v-7.5A2.25 2.25 0 015.25 9h13.5A2.25 2.25 0 0121 11.25v7.5'
 
 function onClickOutside(e: MouseEvent) {
+  if (props.inline) return
   if (!wrapperRef.value?.contains(e.target as Node)) {
     open.value = false
   }
@@ -115,6 +118,7 @@ onBeforeUnmount(() => document.removeEventListener('click', onClickOutside, true
 <template>
   <div ref="wrapperRef" class="relative">
     <button
+      v-if="!inline"
       class="flex h-8 items-center gap-2 rounded border border-oat bg-white px-3 text-sm text-off-black outline-none transition-colors hover:border-sand focus:border-off-black"
       @click="open = !open"
     >
@@ -136,8 +140,9 @@ onBeforeUnmount(() => document.removeEventListener('click', onClickOutside, true
 
     <Transition name="dropdown">
       <div
-        v-if="open"
-        class="absolute left-0 top-full z-30 mt-1.5 w-[272px] rounded-lg border border-oat bg-white p-3 shadow-sm"
+        v-if="inline || open"
+        class="rounded-lg border border-oat bg-white p-3"
+        :class="inline ? 'w-full' : 'absolute left-0 top-full z-30 mt-1.5 w-[272px] shadow-sm'"
       >
         <!-- 月份导航 -->
         <div class="mb-2 flex items-center justify-between">
