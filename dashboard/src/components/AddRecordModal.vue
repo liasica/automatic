@@ -21,6 +21,19 @@ const pad = (n: number) => String(n).padStart(2, '0')
 
 const selectedUser = ref('')
 const pickedDate = ref('')
+
+// 补卡时间模式：random 按最近七天历史随机，normal 固定正常上下班时间
+const timeMode = ref<'random' | 'normal'>('random')
+
+// 正常上下班时间
+const NORMAL_CHECK_IN = '09:00'
+const NORMAL_CHECK_OUT = '18:00'
+
+const timeModes = [
+  { value: 'random', label: '随机' },
+  { value: 'normal', label: '正常' },
+] as const
+
 const checkInTime = ref('09:00')
 const checkOutTime = ref('18:00')
 // 用户手动改过时间后，不再被预填覆盖
@@ -46,6 +59,8 @@ watch(() => props.show, val => {
     selectedUser.value = props.defaultUserId
     addCheckIn.value = true
     addCheckOut.value = true
+    // 直接赋值而非经 setTimeMode，避免与 prefillKey watch 重复触发预填
+    timeMode.value = 'random'
     const n = new Date()
     pickedDate.value = `${n.getFullYear()}-${pad(n.getMonth() + 1)}-${pad(n.getDate())}`
   }
@@ -64,9 +79,16 @@ watch(prefillKey, key => {
 async function prefillTimes() {
   const u = currentUser.value
   if (!u) return
-  const token = ++prefillToken
   checkInDirty.value = false
   checkOutDirty.value = false
+  // 正常模式固定预填，不查询历史
+  if (timeMode.value === 'normal') {
+    prefillToken++
+    checkInTime.value = NORMAL_CHECK_IN
+    checkOutTime.value = NORMAL_CHECK_OUT
+    return
+  }
+  const token = ++prefillToken
   checkInTime.value = u.check_in_latest || '09:00'
   checkOutTime.value = u.check_out_earliest || '18:00'
 
@@ -90,6 +112,23 @@ async function prefillTimes() {
 
   if (!checkInDirty.value && checkIns.length > 0) checkInTime.value = randomUsualTime(checkIns)
   if (!checkOutDirty.value && checkOuts.length > 0) checkOutTime.value = randomUsualTime(checkOuts)
+}
+
+// 切换补卡时间模式：覆盖已填时间（含手动修改过的）
+function setTimeMode(mode: 'random' | 'normal') {
+  if (timeMode.value === mode) return
+  timeMode.value = mode
+  if (mode === 'normal') {
+    // 使进行中的随机预填请求失效，避免异步结果覆盖固定值
+    prefillToken++
+    checkInDirty.value = false
+    checkOutDirty.value = false
+    checkInTime.value = NORMAL_CHECK_IN
+    checkOutTime.value = NORMAL_CHECK_OUT
+  }
+  else {
+    prefillTimes()
+  }
 }
 
 // 在历史打卡时刻的 [最早, 最晚] 区间内随机取值；仅一个时刻时做 ±5 分钟抖动
@@ -254,7 +293,20 @@ function handleSubmit() {
           <!-- 补卡时间输入：按缺失情况动态显示 -->
           <div v-if="dayReady" class="mb-8">
             <template v-if="needCheckIn || needCheckOut">
-              <label class="mb-2 block font-mono text-xs uppercase tracking-wider text-muted">补卡时间</label>
+              <div class="mb-2 flex items-center justify-between">
+                <label class="font-mono text-xs uppercase tracking-wider text-muted">补卡时间</label>
+                <div class="flex overflow-hidden rounded border border-oat">
+                  <button
+                    v-for="m in timeModes"
+                    :key="m.value"
+                    class="px-2.5 py-1 text-xs transition-colors"
+                    :class="timeMode === m.value ? 'bg-off-black text-white' : 'bg-white text-muted hover:text-off-black'"
+                    @click="setTimeMode(m.value)"
+                  >
+                    {{ m.label }}
+                  </button>
+                </div>
+              </div>
               <div class="space-y-3">
                 <div v-if="needCheckIn" class="flex items-center gap-3">
                   <label class="flex w-16 shrink-0 cursor-pointer select-none items-center gap-2 text-sm text-off-black">
