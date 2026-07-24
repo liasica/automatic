@@ -216,10 +216,10 @@ const canSubmit = computed(() => {
   return true
 })
 
-// 随机化秒数，避免固定 :00 偏移
+// 随机模式随机化秒数避免固定 :00 偏移；正常模式固定整分
 function buildDateTime(t: string) {
   const [h, m] = t.split(':')
-  const second = pad(Math.floor(Math.random() * 60))
+  const second = timeMode.value === 'normal' ? '00' : pad(Math.floor(Math.random() * 60))
   return `${pickedDate.value} ${pad(Number(h))}:${pad(Number(m))}:${second}`
 }
 
